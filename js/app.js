@@ -5,6 +5,7 @@
 
 const App = {
   currentView: 'dashboard',
+  currentClientId: null,
   dashboardTab: 'oferty', // 'oferty' | 'klienci'
   isClientView: false,
 
@@ -23,6 +24,47 @@ const App = {
 
     document.getElementById('loginForm').addEventListener('submit', App.handleLogin);
     document.querySelectorAll('[data-view]').forEach(btn => btn.addEventListener('click', () => App.navigateTo(btn.dataset.view)));
+    window.addEventListener('hashchange', () => App.handleRoute());
+  },
+
+  // ---- HASH ROUTER ----
+  parseRoute() {
+    const hash = window.location.hash.replace(/^#\/?/, '');
+    if (!hash) return { view: 'dashboard' };
+    const [seg, id] = hash.split('/');
+    if (seg === 'klient' && id) return { view: 'client', id };
+    if (seg === 'admin') return { view: 'admin' };
+    if (seg === 'editor') return { view: 'editor' };
+    return { view: 'dashboard' };
+  },
+
+  setRoute(view, id) {
+    let hash = '';
+    if (view === 'client' && id) hash = `#/klient/${id}`;
+    else if (view === 'admin') hash = '#/admin';
+    else if (view === 'editor') hash = '#/editor';
+    const target = window.location.pathname + window.location.search + hash;
+    if (window.location.hash !== hash) {
+      if (hash) window.location.hash = hash;
+      else history.replaceState(null, '', target);
+    }
+  },
+
+  async handleRoute() {
+    if (App.isClientView) return;
+    const r = App.parseRoute();
+    // Already on this exact view → no-op (prevents double-render after setRoute → hashchange)
+    if (r.view === 'client' && App.currentView === 'client' && App.currentClientId === r.id) return;
+    if (r.view !== 'client' && App.currentView === r.view) return;
+
+    if (r.view === 'client') {
+      if (!Store.dbClients || Store.dbClients.length === 0) {
+        try { await Store.loadClients(); } catch {}
+      }
+      App.renderClientPage(r.id);
+    } else {
+      App.navigateTo(r.view, { skipRouteSync: true });
+    }
   },
 
   async handleLogin(e) {
@@ -56,12 +98,23 @@ const App = {
     if (mob) mob.classList.toggle('hidden', !isAdmin);
 
     try { await Store.loadReferenceData(); } catch (err) { App.toast('Błąd ładowania bazy', 'error'); }
-    App.navigateTo('dashboard');
+
+    // Honor initial hash route (e.g. opened in new window with #/klient/:id)
+    const r = App.parseRoute();
+    if (r.view === 'client') {
+      try { await Store.loadClients(); } catch {}
+      App.renderClientPage(r.id);
+    } else {
+      App.navigateTo(r.view, { skipRouteSync: true });
+    }
   },
 
-  navigateTo(view) {
+  navigateTo(view, opts = {}) {
     App.currentView = view;
-    ['viewDashboard', 'viewEditor', 'viewAdmin'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    ['viewDashboard', 'viewEditor', 'viewAdmin', 'viewClient'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
     document.querySelectorAll('[data-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
 
     switch (view) {
@@ -78,6 +131,49 @@ const App = {
         Admin.switchTab(Admin.activeTab || 'clients');
         break;
     }
+    if (!opts.skipRouteSync) App.setRoute(view);
+  },
+
+  // ---- CLIENT PAGE (route #/klient/:id) ----
+  openClientPage(clientId) {
+    App.currentView = 'client';
+    App.setRoute('client', clientId);
+    App.renderClientPage(clientId);
+  },
+
+  renderClientPage(clientId) {
+    App.currentView = 'client';
+    App.currentClientId = clientId;
+    ['viewDashboard', 'viewEditor', 'viewAdmin', 'viewClient'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('hidden');
+    });
+    document.querySelectorAll('[data-view]').forEach(btn => btn.classList.remove('active'));
+    document.getElementById('viewClient').classList.remove('hidden');
+
+    const c = Store.dbClients.find(x => x.id === clientId);
+    const body = document.getElementById('clientPageBody');
+    const titleEl = document.getElementById('clientPageTitle');
+    const subEl = document.getElementById('clientPageSubtitle');
+
+    if (!c) {
+      titleEl.textContent = 'Klient nie znaleziony';
+      subEl.textContent = '';
+      body.innerHTML = `<div class="card-body-padded"><div class="empty-state"><div class="empty-state-icon">❓</div><div class="empty-state-title">Nie znaleziono klienta</div><button class="btn btn-primary" onclick="App.navigateTo('dashboard')">← Wróć do listy</button></div></div>`;
+      return;
+    }
+
+    titleEl.textContent = c.full_name || 'Klient';
+    subEl.textContent = [c.email, c.phone].filter(Boolean).join(' · ') || '—';
+    body.innerHTML = `<div class="card-body-padded">${Admin.renderClientDetailHTML(c)}</div>`;
+  },
+
+  openClientInWindow(clientId) {
+    const url = `${window.location.pathname}#/klient/${clientId}`;
+    const w = 960, h = 760;
+    const left = (window.screen.width - w) / 2;
+    const top = (window.screen.height - h) / 2;
+    window.open(url, `klient_${clientId}`, `width=${w},height=${h},left=${left},top=${top},menubar=no,toolbar=no,location=no,status=no`);
   },
 
   // ---- DASHBOARD z zakładkami ----
@@ -188,6 +284,7 @@ const App = {
           <div class="offer-card-actions">
             <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.createOfferForClient('${cl.id}')" title="Utwórz ofertę">📊 Oferta</button>
             <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();App.openSurveyModal('${cl.id}')" title="Wypełnij ankietę">📝 Ankieta</button>
+            <button class="btn btn-ghost btn-icon" onclick="event.stopPropagation();App.openClientInWindow('${cl.id}')" title="Otwórz w nowym oknie">🗗</button>
           </div>
         </div>`;
       });
@@ -204,7 +301,6 @@ const App = {
   createOfferForClient(clientId) {
     const c = Store.dbClients.find(x => x.id === clientId);
     if (!c) return;
-    App.closeModal('clientDetailModal');
     Store.resetState();
     Store.state.clientId = clientId;
     Store.state.clientName = c.full_name || '';

@@ -138,6 +138,7 @@ const Admin = {
           <td>${refCell}</td>
           <td style="font-size:0.7rem;color:var(--slate-400);">${date}</td>
           <td onclick="event.stopPropagation()">
+            <button class="btn btn-ghost btn-icon" onclick="App.openClientInWindow('${c.id}')" title="Otwórz w nowym oknie">🗗</button>
             <button class="btn btn-ghost btn-icon" onclick="Admin.deleteClient('${c.id}')" title="Usuń klienta" style="color:var(--red-500,#ef4444);">🗑</button>
           </td>
         </tr>`;
@@ -213,7 +214,7 @@ const Admin = {
       };
       el.innerHTML = recent.map(c => {
         const isNew = (now - new Date(c.created_at).getTime()) < 48 * 3600000;
-        return `<div class="recent-client-row" onclick="Admin.showClientDetail('${c.id}');App.navigateTo('admin')">
+        return `<div class="recent-client-row" onclick="Admin.showClientDetail('${c.id}')">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:700;font-size:0.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escHtml(c.full_name || '—')}</div>
             <div style="font-size:0.73rem;color:var(--slate-500,#64748b);">${escHtml(c.profession || c.employment_type || '—')}</div>
@@ -229,12 +230,13 @@ const Admin = {
     }
   },
 
-  // ---- CLIENT DETAIL MODAL ----
+  // ---- CLIENT DETAIL (navigates to #/klient/:id) ----
   showClientDetail(clientId) {
-    const c = Store.dbClients.find(x => x.id === clientId);
-    if (!c) return;
+    App.openClientPage(clientId);
+  },
 
-    const body = document.getElementById('clientDetailBody');
+  // Builds the inner HTML for a client detail view (used by App.renderClientPage)
+  renderClientDetailHTML(c) {
     const riskFields = [
       ['risk_balloon', 'Baloniarstwo'], ['risk_sailing', 'Żeglarstwo'], ['risk_skiing', 'Narciarstwo'],
       ['risk_skydiving', 'Skoki spadochronowe'], ['risk_diving', 'Nurkowanie'], ['risk_caving', 'Speleologia'],
@@ -389,20 +391,12 @@ const Admin = {
     }
 
     html += `</div>`;
-
-    html += `<div style="margin-top:1rem;padding-top:0.75rem;border-top:1px solid var(--slate-200);display:flex;gap:0.5rem;">
-      <button class="btn btn-primary btn-sm" onclick="Admin.createOfferForClient('${c.id}')">📊 Utwórz ofertę dla tego klienta</button>
-    </div>`;
-
-    body.innerHTML = html;
-    document.getElementById('clientDetailTitle').textContent = c.full_name || 'Klient';
-    document.getElementById('clientDetailModal').classList.remove('hidden');
+    return html;
   },
 
   createOfferForClient(clientId) {
     const c = Store.dbClients.find(x => x.id === clientId);
     if (!c) return;
-    App.closeModal('clientDetailModal');
     Store.resetState();
     Store.state.clientId = clientId;
     Store.state.clientName = c.full_name || '';

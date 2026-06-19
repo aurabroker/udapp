@@ -167,6 +167,29 @@
         <!-- ===== PDF Export Container END ===== -->
       </div>
 
+      <!-- CLIENT PAGE -->
+      <div id="viewClient" class="hidden">
+        <div class="editor-topbar no-client">
+          <div style="display:flex;align-items:flex-start;gap:0.75rem;flex:1;min-width:0;">
+            <button class="editor-back no-pdf" onclick="App.navigateTo('dashboard')">← Wróć</button>
+            <div class="editor-title-group">
+              <div class="editor-title-input" id="clientPageTitle" style="font-weight:800;">Klient</div>
+              <div class="editor-client-input" id="clientPageSubtitle" style="font-size:0.8rem;color:var(--slate-500);">—</div>
+            </div>
+          </div>
+          <div class="editor-actions no-pdf">
+            <button class="btn btn-outline btn-sm" onclick="App.openSurveyModal(App.currentClientId)" id="clientPageEditBtn">📝 Edytuj ankietę</button>
+            <button class="btn btn-primary btn-sm" onclick="App.createOfferForClient(App.currentClientId)" id="clientPageOfferBtn">📊 Utwórz ofertę</button>
+            <button class="btn btn-ghost btn-sm" onclick="App.openClientInWindow(App.currentClientId)" title="Otwórz w nowym oknie">🗗</button>
+          </div>
+        </div>
+        <div id="clientPageBody" class="card">
+          <div class="card-body-padded">
+            <div class="empty-state"><div class="spinner spinner-lg"></div></div>
+          </div>
+        </div>
+      </div>
+
       <!-- ADMIN -->
       <div id="viewAdmin" class="hidden">
         <div class="dashboard-header">
@@ -513,14 +536,6 @@
             </div>
 
   <div id="confirmModal" class="modal-overlay hidden"><div class="modal-box" style="max-width:380px;"><div class="modal-header"><div class="modal-title" id="confirmTitle">Potwierdź</div><button class="modal-close" onclick="App.closeModal('confirmModal')">✕</button></div><div class="modal-body"><p style="font-size:0.85rem;color:var(--slate-600);" id="confirmMessage"></p></div><div class="modal-footer"><button class="btn btn-outline" onclick="App.closeModal('confirmModal')">Anuluj</button><button class="btn btn-danger" id="confirmActionBtn">Usuń</button></div></div></div>
-
-  <!-- Client Detail Modal (Admin) -->
-  <div id="clientDetailModal" class="modal-overlay hidden">
-    <div class="modal-box modal-box-lg" style="max-width:720px;">
-      <div class="modal-header"><div class="modal-title" id="clientDetailTitle">Klient</div><button class="modal-close" onclick="App.closeModal('clientDetailModal')">✕</button></div>
-      <div class="modal-body" id="clientDetailBody" style="max-height:65vh;overflow-y:auto;"></div>
-    </div>
-  </div>
 
   <!-- Exclusions Accept Modal (Client) -->
   <div id="exclusionsAcceptModal" class="modal-overlay hidden">
