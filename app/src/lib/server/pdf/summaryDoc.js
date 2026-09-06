@@ -2,7 +2,8 @@
  * summaryDoc.js — definicja dokumentu pdfmake dla podsumowania oferty.
  * Odpowiednik summaryHtml.js, ale bez HTML i bez zewnętrznego API.
  */
-import { money, yesNo, insurerLabel, insurerRow, offerNoDisplay } from '$lib/format.js';
+import { insurerLabel } from '$lib/format.js';
+import { comparisonRows } from '$lib/comparisonRows.js';
 import { conditionsContent } from './conditionsDoc.js';
 
 const SLATE_900 = '#0f172a';
@@ -26,29 +27,6 @@ function employmentLabel(code) {
 function isUop(code) {
   return /^uop$/i.test(String(code || '').trim()) || /umowa o prac/i.test(String(code || ''));
 }
-
-/** Okresowa niezdolność: gdy pokrycie faktycznie jest — TAK na zielono. */
-function tempIncap(d) {
-  const covered = d.temp_incapacity_covered === true || d.temp_monthly_benefit != null || d.temp_sum_insured != null;
-  return covered ? { text: 'TAK', color: GREEN, bold: true } : { text: yesNo(d.temp_incapacity_covered) };
-}
-
-const ROWS = [
-  ['Ubezpieczyciel', () => ({ text: insurerRow() })],
-  ['Numer oferty (ubezpieczyciel)', (d) => ({ text: offerNoDisplay(d.offer_number) })],
-  ['Okres ubezpieczenia', (d) => ({ text: d.insurance_period || '—' })],
-  ['Śmierć / inwalidztwo (NW)', (d) => ({
-    text: d.parsed_raw?.death_sum_insured != null ? money(d.parsed_raw.death_sum_insured) : yesNo(d.death_covered)
-  })],
-  ['Okresowa niezdolność do pracy', (d) => tempIncap(d)],
-  ['— świadczenie miesięczne', (d) => ({ text: money(d.temp_monthly_benefit) })],
-  ['Trwała niezdolność do pracy', (d) => ({
-    text: d.perm_sum_insured != null ? money(d.perm_sum_insured) : yesNo(d.perm_incapacity_covered)
-  })],
-  ['Okres odszkodowawczy', (d) => ({ text: d.indemnity_period || '—' })],
-  ['Okres wyczekiwania (wypadek)', (d) => ({ text: d.wait_accident != null ? d.wait_accident + ' dni' : '—' })],
-  ['Okres wyczekiwania (choroba)', (d) => ({ text: d.wait_illness != null ? d.wait_illness + ' dni' : '—' })]
-];
 
 /** Nagłówek: logo (jeśli udało się pobrać) albo napis UtrataDochodu. */
 function brandNode(logo) {
@@ -112,22 +90,28 @@ export function buildSummaryDocDefinition(p) {
         { text: "przedstawiciel Lloyd's", style: 'cmpHeadFirst' },
         ...documents.map((d) => ({ text: insurerLabel(d.insurer_type), style: 'cmpHead' }))
       ];
+  // Wiersze (bazowe + postanowienia dodatkowe + składki) liczy ten sam moduł,
+  // z którego korzysta tabela w przeglądarce.
   const body = [header];
-  for (const [label, fn] of ROWS) {
-    body.push([{ text: label, style: 'cmpLabel' }, ...documents.map((d) => ({ ...fn(d), style: 'cmpCell' }))]);
+  for (const row of comparisonRows(documents)) {
+    if (row.kind === 'section') {
+      body.push([
+        { text: row.label, style: 'cmpSection', colSpan: documents.length + 1 },
+        ...Array.from({ length: documents.length }, () => ({}))
+      ]);
+      continue;
+    }
+    body.push([
+      { text: row.label, style: 'cmpLabel' },
+      ...row.cells.map((c) => ({
+        text: c.text,
+        style: 'cmpCell',
+        ...(c.green ? { color: GREEN, bold: true } : {}),
+        ...(c.bold ? { bold: true } : {}),
+        ...(c.underline ? { decoration: 'underline' } : {})
+      }))
+    ]);
   }
-  body.push([
-    { text: 'Składka roczna (łącznie)', style: 'cmpLabel' },
-    ...documents.map((d) => ({ text: money(d.premium_total), bold: true, style: 'cmpCell' }))
-  ]);
-  body.push([
-    { text: 'Rata miesięczna', style: 'cmpLabel' },
-    ...documents.map((d) =>
-      d.premium_monthly != null
-        ? { text: money(d.premium_monthly), bold: true, decoration: 'underline', style: 'cmpCell' }
-        : { text: '—', style: 'cmpCell' }
-    )
-  ]);
 
   const cmpTable = {
     table: { headerRows: 1, widths: [150, ...documents.map(() => '*')], body },
@@ -178,6 +162,8 @@ export function buildSummaryDocDefinition(p) {
       cmpHead: { bold: true, color: '#ffffff', fillColor: SLATE_800, margin: [4, 4, 4, 4], alignment: 'center' },
       cmpHeadFirst: { bold: true, color: '#ffffff', fillColor: SLATE_900, margin: [4, 4, 4, 4] },
       cmpLabel: { bold: true, color: '#334155', fillColor: SLATE_50, margin: [4, 3, 4, 3] },
+      // Nagłówek sekcji „Postanowienia dodatkowe" — wiersz na całą szerokość tabeli.
+      cmpSection: { bold: true, fontSize: 8, color: '#475569', fillColor: '#f1f5f9', margin: [4, 3, 4, 3] },
       // Komórki z danymi ofert — wyśrodkowane.
       cmpCell: { margin: [4, 3, 4, 3], alignment: 'center' },
       ocH2: { fontSize: 11.5, bold: true, color: SLATE_900 },

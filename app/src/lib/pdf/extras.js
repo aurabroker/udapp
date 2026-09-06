@@ -1,0 +1,210 @@
+/**
+ * extras.js — „Postanowienia dodatkowe” oferty: klauzule dodatkowe i ryzyka,
+ * które pojawiają się w ofercie tylko wtedy, gdy zostały wskazane przez Klienta.
+ *
+ * Wynik trafia do parsed_raw.extras (jsonb, bez zmian schematu bazy). Tabela
+ * porównania pokazuje pozycję wyłącznie wtedy, gdy choć jedna z porównywanych
+ * ofert faktycznie ją obejmuje — patrz $lib/comparisonRows.js.
+ */
+import { parseAmount } from './helpers.js';
+
+/**
+ * @typedef {Object} Extra
+ * @property {string} key wspólny klucz pozycji (ten sam u obu ubezpieczycieli)
+ * @property {string} label etykieta w tabeli porównania
+ * @property {string|null} symbol symbol klauzuli z oferty (np. LW140)
+ * @property {boolean|null} covered true = objęte, false = wprost wyłączone, null = brak wzmianki
+ * @property {number|null} amount suma ubezpieczenia, gdy oferta ją podaje
+ * @property {string|null} offer_label nazwa użyta w ofercie
+ * @property {number} order kolejność w tabeli
+ */
+
+/**
+ * Rejestr znanych klauzul. Symbol -> wspólny klucz, etykieta i kolejność w tabeli.
+ * Dzięki wspólnym kluczom Leadenhall i CEU trafiają w ten sam wiersz, mimo innych
+ * nazw w dokumentach. Klauzula spoza rejestru NIE ginie: dostaje klucz `lw_<symbol>`
+ * i etykietę wprost z oferty (patrz pushExtra).
+ */
+/** @type {Record<string, { key?: string, label?: string, order?: number, informational?: boolean }>} */
+export const EXTRA_REGISTRY = {
+  LW140: { key: 'hospital_daily', label: 'Dzienne świadczenie szpitalne i rekonwalescencja', order: 10 },
+  LW141: { key: 'disability_adaptation', label: 'Przystosowanie do życia w niepełnosprawności', order: 20 },
+  LW126: { key: 'medical_costs', label: 'Zwrot kosztów leczenia i rehabilitacji', order: 30 },
+  LW121: { key: 'unconsciousness_weekly', label: 'Tygodniowe świadczenie za utratę przytomności', order: 40 },
+  LW143: { key: 'permanent_impairment', label: 'Trwały uszczerbek na zdrowiu', order: 50 },
+  LW142: { key: 'funeral', label: 'Koszty pogrzebu', order: 60 },
+  // Klauzule informacyjne nie są ryzykiem — nie pokazujemy ich w porównaniu.
+  LW300: { informational: true }
+};
+
+/** Kolejność pozycji spoza katalogu symboli (HIV/WZW, ryzyka aktywnego życia). */
+/** @type {Record<string, number>} */
+const KEY_ORDER = { hiv_wzw: 70, active_life: 80 };
+const DEFAULT_ORDER = 90;
+
+/** Etykiety dla pozycji nieopisanych symbolem klauzuli. */
+/** @type {Record<string, string>} */
+const KEY_LABEL = {
+  hiv_wzw: 'Zakażenie HIV / WZW przy pracy',
+  active_life: 'Ryzyka aktywnego życia',
+  hospital_daily: 'Dzienne świadczenie szpitalne i rekonwalescencja'
+};
+
+/**
+ * Dokłada pozycję do listy, bez duplikatów po kluczu (pierwsze wystąpienie wygrywa).
+ * @param {Extra[]} list
+ * @param {Partial<Extra>} item
+ */
+function pushExtra(list, item) {
+  if (!item || !item.key) return;
+  if (list.some((x) => x.key === item.key)) return;
+  const reg = item.symbol ? EXTRA_REGISTRY[item.symbol.toUpperCase()] : null;
+  list.push({
+    key: item.key,
+    label: item.label || reg?.label || KEY_LABEL[item.key] || item.offer_label || item.key,
+    symbol: item.symbol ? item.symbol.toUpperCase() : null,
+    covered: item.covered ?? null,
+    amount: item.amount ?? null,
+    offer_label: item.offer_label || null,
+    order: reg?.order ?? KEY_ORDER[item.key] ?? DEFAULT_ORDER
+  });
+}
+
+/**
+ * Fragment tekstu od kotwicy startowej do pierwszej z kotwic końcowych.
+ * @param {string} text
+ * @param {RegExp} startRe
+ * @param {RegExp} [endRe]
+ * @returns {string}
+ */
+function section(text, startRe, endRe) {
+  const s = text.search(startRe);
+  if (s < 0) return '';
+  const rest = text.slice(s);
+  const e = endRe ? rest.search(endRe) : -1;
+  return e < 0 ? rest : rest.slice(0, e);
+}
+
+/**
+ * Leadenhall: pozycja „Postanowienia dodatkowe” wylicza wykupione klauzule w formacie
+ *   „Świadczenie szpitalne (LW140) z sumą ubezpieczenia 500 zł”.
+ * Wzorzec z sumą jest na tyle jednoznaczny, że skanujemy nim cały tekst oferty —
+ * definicje klauzul w OWU mają nagłówek „Klauzula LW140”, więc się nie łapią.
+ * @param {string} text
+ * @returns {Extra[]}
+ */
+function detectLeadenhall(text) {
+  /** @type {Extra[]} */
+  const out = [];
+
+  const withSum = /([^\n(]{3,120}?)\s*\((LW\d{3})\)\s*z\s+sumą\s+ubezpieczenia\s+([\d  ]+(?:,\d{2})?)\s*zł/gi;
+  let m;
+  while ((m = withSum.exec(text))) {
+    const symbol = m[2].toUpperCase();
+    const reg = EXTRA_REGISTRY[symbol];
+    if (reg?.informational) continue;
+    // Nazwa bywa poprzedzona zdaniem wprowadzającym („…oraz następujące świadczenia dodatkowe:”).
+    const offerLabel = m[1].replace(/^[\s\S]*[::]\s*/, '').replace(/^[\s\S]*\n/, '').trim();
+    pushExtra(out, {
+      key: reg?.key || `lw_${symbol.toLowerCase()}`,
+      symbol,
+      covered: true,
+      amount: parseAmount(m[3]),
+      offer_label: offerLabel
+    });
+  }
+
+  // Klauzule wymienione bez sumy ubezpieczenia — tylko w obrębie pozycji „Postanowienia dodatkowe”.
+  const sec = section(
+    text,
+    /Postanowienia\s+dodatkowe/i,
+    /Płatność\s+wynikająca|Osoby\s+uprawnione|Załączniki\s+do\s+polisy/i
+  );
+  const bare = /\((LW\d{3})\)/g;
+  while ((m = bare.exec(sec))) {
+    const symbol = m[1].toUpperCase();
+    const reg = EXTRA_REGISTRY[symbol];
+    if (reg?.informational) continue;
+    pushExtra(out, { key: reg?.key || `lw_${symbol.toLowerCase()}`, symbol, covered: true, amount: null });
+  }
+
+  // HIV/WZW — oferta stwierdza status wprost, w obie strony.
+  const hivExcluded = /(?:HIV|WZW)[^.\n]{0,60}nie\s+(?:są|sa|jest)\s+objęt|(?:HIV|WZW)[^.\n]{0,60}nie\s+obejmuj/i.test(text);
+  const hivCovered =
+    /zakażeni\w*\s+wirus\w+\s+(?:HIV|WZW)\s+(?:jest|są)\s+objęt/i.test(text) ||
+    /(?:HIV|WZW)[^.\n]{0,60}(?:jest|są)\s+objęt\w*\s+ubezpieczeni/i.test(text);
+  if (hivExcluded || hivCovered) {
+    pushExtra(out, { key: 'hiv_wzw', covered: hivCovered && !hivExcluded, amount: null });
+  }
+
+  // Ryzyka aktywnego życia — objęte tylko, gdy oferta je wylicza.
+  const alSec = section(text, /Ryzyka\s+aktywnego\s+życia/i, /\n\s*\n|Postanowienia\s+dodatkowe/);
+  if (alSec) {
+    const none = /nie\s+obejmuje\s+żadnego|nie\s+są\s+objęt|nie\s+obejmuj/i.test(alSec);
+    pushExtra(out, { key: 'active_life', covered: !none, amount: null });
+  }
+
+  return out;
+}
+
+/**
+ * CEU: pozycja „Klauzule opcjonalne”. Każda klauzula ma własny status
+ * („Objęta ubezpieczeniem” / „Nie objęta ubezpieczeniem”) i opcjonalną kwotę.
+ * @param {string} text
+ * @returns {Extra[]}
+ */
+function detectCEU(text) {
+  /** @type {Extra[]} */
+  const out = [];
+  const sec = section(
+    text,
+    /Klauzule\s+opcjonalne/i,
+    /Ryzyka\s+aktywnego|Składka|Łączna\s+składka|Ogólne\s+Warunki/i
+  );
+
+  const line = /([A-ZŁŚŻŹĆŃ][^\n]{5,120}?)\s+(Nie\s+objęt\w+|Objęt\w+)\s+ubezpieczeniem([^\n]*)/gi;
+  let m;
+  while ((m = line.exec(sec))) {
+    const offerLabel = m[1].trim();
+    const covered = !/^Nie/i.test(m[2]);
+    const amount = parseAmount((m[3].match(/([\d  ]+(?:,\d{2})?)\s*(?:zł|PLN)/i) || [])[1]);
+    const key = /szpital/i.test(offerLabel) ? 'hospital_daily' : `ceu_${slug(offerLabel)}`;
+    pushExtra(out, { key, covered, amount, offer_label: offerLabel });
+  }
+
+  // Ryzyka aktywnego wypoczynku / życia — osobna pozycja oferty.
+  const alSec = section(text, /Ryzyka\s+aktywnego/i, /\n\s*\n/);
+  if (alSec) {
+    const none = /nie\s+obejmuje|nie\s+są\s+objęt|Nie\s+objęt/i.test(alSec);
+    pushExtra(out, { key: 'active_life', covered: !none, amount: null });
+  }
+
+  return out;
+}
+
+/**
+ * Klucz techniczny z nazwy klauzuli (dla pozycji spoza rejestru).
+ * @param {string} s
+ */
+function slug(s) {
+  return String(s)
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/ł/g, 'l')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 40);
+}
+
+/**
+ * Wykrywa postanowienia dodatkowe w tekście oferty.
+ * @param {string} text
+ * @param {'leadenhall'|'ceu'} insurerType
+ * @returns {Extra[]}
+ */
+export function detectExtras(text, insurerType) {
+  if (!text) return [];
+  const list = insurerType === 'ceu' ? detectCEU(text) : detectLeadenhall(text);
+  return list.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'pl'));
+}
