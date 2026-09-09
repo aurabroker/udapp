@@ -172,7 +172,9 @@
   {#if data.offer.access_code}
     <p style="margin-top:.6rem;font-size:.9rem;">
       🔑 Kod dostępu klienta: <strong style="letter-spacing:.1em;font-size:1.05rem;">{data.offer.access_code}</strong>
-      <span class="muted"> — odblokowuje link i otwiera pobrane pliki PDF (wysyłany SMS-em).</span>
+      <span class="muted"> — odblokowuje link i otwiera pobrane pliki PDF.
+        {#if data.codeSource === 'pesel'}To 4 ostatnie cyfry PESEL Klienta, więc SMS i e-mail nie podają go w treści.
+        {:else}Wysyłany SMS-em.{/if}</span>
     </p>
   {/if}
   {#if data.pin}

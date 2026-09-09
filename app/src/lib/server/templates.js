@@ -9,25 +9,41 @@ function esc(s) {
 
 /**
  * Email do klienta z linkiem do oferty.
- * @param {{clientName?: string, link: string, ttlHours: number, logoUrl?: string, footerText?: string}} p
+ * `codeSource` = 'pesel', gdy kodem dostępu są 4 ostatnie cyfry PESEL Ubezpieczonego —
+ * wtedy piszemy o tym wprost zamiast odsyłać po hasło do SMS-a.
+ * @param {{clientName?: string, link: string, ttlHours: number, logoUrl?: string,
+ *   footerText?: string, codeSource?: 'pesel'|'code'}} p
  * @returns {{ html: string, text: string }}
  */
-export function offerLinkEmail({ clientName, link, ttlHours, logoUrl = '', footerText = '' }) {
+export function offerLinkEmail({ clientName, link, ttlHours, logoUrl = '', footerText = '', codeSource = 'code' }) {
   // Bez znajomości płci i wołacza każda personalizacja imieniem brzmi niegramatycznie
   // („Szanowny/a Panie/Pani Anna"), dlatego neutralne i zawsze poprawne powitanie.
   const hi = 'Dzień dobry,';
   const footer = String(footerText || '').trim() || COMPANY_FOOTER;
 
   // W e-mailu logo musi być linkiem — klienty pocztowe blokują obrazy w data:.
+  // Nagłówek jest biały: logo bywa PNG-iem z białym tłem i na ciemnym pasku
+  // odcinało się widocznym prostokątem.
   const brand = logoUrl
     ? `<img src="${esc(logoUrl)}" alt="UtrataDochodu" height="34" style="height:34px;width:auto;display:block;border:0;" />`
-    : `<span style="font-size:20px;font-weight:800;color:#fff;">Utrata<span style="color:#38bdf8;">Dochodu</span></span>`;
+    : `<span style="font-size:20px;font-weight:800;color:#0f172a;">Utrata<span style="color:#0ea5e9;">Dochodu</span></span>`;
+
+  // Kod dostępu: gdy to 4 ostatnie cyfry PESEL, e-mail jest samowystarczalny
+  // i nie odsyła do SMS-a; w pozostałych przypadkach hasło jedzie osobno SMS-em.
+  const accessHtml =
+    codeSource === 'pesel'
+      ? `Dostęp zabezpieczony jest hasłem — to <strong>4 ostatnie cyfry numeru PESEL</strong> osoby ubezpieczonej. Tym samym hasłem otwierają się pobrane pliki PDF. Link jest ważny przez ${ttlHours}h.`
+      : `Dostęp zabezpieczony jest <strong>4-cyfrowym hasłem</strong>, które wysłaliśmy osobno SMS-em. Hasło jest ważne przez ${ttlHours}h.`;
+  const accessText =
+    codeSource === 'pesel'
+      ? `Dostęp zabezpieczony jest hasłem — to 4 ostatnie cyfry numeru PESEL osoby ubezpieczonej. Tym samym hasłem otwierają się pobrane pliki PDF. Link jest ważny przez ${ttlHours}h.`
+      : `Dostęp zabezpieczony jest 4-cyfrowym hasłem, które wysłaliśmy osobno SMS-em. Hasło jest ważne przez ${ttlHours}h.`;
 
   const html = `<!doctype html><html lang="pl"><head><meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1"></head>
   <body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#1e293b;">
   <div style="max-width:560px;margin:0 auto;padding:32px 24px;">
-    <div style="background:#1e293b;border-radius:12px 12px 0 0;padding:18px 24px;">${brand}</div>
+    <div style="background:#ffffff;border-radius:12px 12px 0 0;padding:18px 24px;border-bottom:1px solid #e2e8f0;">${brand}</div>
     <div style="background:#fff;border-radius:0 0 12px 12px;padding:28px 24px;">
       <p style="font-size:15px;margin:0 0 14px;">${hi}</p>
       <p style="font-size:15px;line-height:1.6;margin:0 0 8px;">przygotowaliśmy dla Pani/Pana porównanie ofert ubezpieczenia utraty dochodu. Prosimy kliknąć poniższy przycisk, aby je zobaczyć.</p>
@@ -36,7 +52,7 @@ export function offerLinkEmail({ clientName, link, ttlHours, logoUrl = '', foote
       </p>
       <p style="font-size:13px;color:#64748b;line-height:1.6;margin:0 0 6px;">Gdyby przycisk nie działał, prosimy skopiować adres:<br />
         <a href="${esc(link)}" style="color:#2563eb;word-break:break-all;">${esc(link)}</a></p>
-      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:14px 0 0;">Dostęp zabezpieczony jest <strong>4-cyfrowym hasłem</strong>, które wysłaliśmy osobno SMS-em. Hasło jest ważne przez ${ttlHours}h.</p>
+      <p style="font-size:13px;color:#64748b;line-height:1.6;margin:14px 0 0;">${accessHtml}</p>
       <hr style="border:0;border-top:1px solid #e2e8f0;margin:22px 0 14px;" />
       <p style="font-size:11px;color:#94a3b8;line-height:1.5;margin:0;">${esc(footer).replace(/\n/g, '<br />')}</p>
     </div>
@@ -49,7 +65,7 @@ export function offerLinkEmail({ clientName, link, ttlHours, logoUrl = '', foote
     'Oferta dostępna jest pod adresem:',
     link,
     '',
-    `Dostęp zabezpieczony jest 4-cyfrowym hasłem, które wysłaliśmy osobno SMS-em. Hasło jest ważne przez ${ttlHours}h.`,
+    accessText,
     '',
     '---',
     footer

@@ -2,13 +2,14 @@ import { error } from '@sveltejs/kit';
 import { createAdminClient } from '$lib/server/supabase.js';
 import { isVerified } from '$lib/server/clientAuth.js';
 import { getSettings } from '$lib/server/settings.js';
+import { accessCodeSource } from '$lib/server/accessCode.js';
 import { OFFER_CONDITIONS_HTML } from '$lib/server/offerConditions.js';
 
 export async function load({ params, cookies }) {
   const sb = createAdminClient();
   const { data: offer } = await sb
     .from('ud_offers')
-    .select('id, name, offer_number, client_name, broker_message, share_token, status, client_choice')
+    .select('id, name, offer_number, client_name, broker_message, share_token, status, client_choice, client_id, access_code')
     .eq('share_token', params.token)
     .maybeSingle();
 
@@ -17,12 +18,14 @@ export async function load({ params, cookies }) {
   const verified = await isVerified(cookies, offer.id);
 
   if (!verified) {
-    // Minimalny payload — bez danych oferty dopóki brak PIN
+    // Minimalny payload — bez danych oferty dopóki brak PIN.
+    // pinHint mówi tylko, SKĄD Klient zna kod; samego kodu nie ujawniamy.
     return {
       token: params.token,
       requiresPin: true,
       clientName: offer.client_name,
-      offerName: offer.name
+      offerName: offer.name,
+      pinHint: await accessCodeSource(sb, offer)
     };
   }
 

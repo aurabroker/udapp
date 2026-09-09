@@ -2,6 +2,7 @@ import { error, fail, redirect } from '@sveltejs/kit';
 import { createAdminClient } from '$lib/server/supabase.js';
 import { sendOfferToClient, deleteOffer, deleteOfferDocument, addDocumentsToOffer, refreshOfferDocuments, addAttachmentsToOffer } from '$lib/server/offers.js';
 import { clientBaseUrl } from '$lib/server/appUrl.js';
+import { accessCodeSource } from '$lib/server/accessCode.js';
 
 export async function load({ params, locals }) {
   const { user } = await locals.safeGetSession();
@@ -27,6 +28,8 @@ export async function load({ params, locals }) {
     questions: questions || [],
     pin,
     clients: clients || [],
+    // 'pesel' = kod to 4 ostatnie cyfry PESEL Klienta, więc nie jedzie w treści SMS-a.
+    codeSource: await accessCodeSource(sb, offer),
     link: `${clientBaseUrl()}/offer/${offer.share_token}`
   };
 }

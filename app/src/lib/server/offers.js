@@ -13,6 +13,7 @@ import { buildSummaryDocDefinition } from './pdf/summaryDoc.js';
 import { renderPdf, loadLogo } from './pdf/engine.js';
 import { getSettings } from './settings.js';
 import { clientBaseUrl } from './appUrl.js';
+import { accessCodeSource } from './accessCode.js';
 import { env } from '$env/dynamic/private';
 
 const BUCKET = 'ud-offers';
@@ -524,6 +525,11 @@ export async function sendOfferToClient(offerId) {
 
   const link = `${clientBaseUrl()}/offer/${offer.share_token}`;
 
+  // Gdy kodem dostępu są 4 ostatnie cyfry PESEL Ubezpieczonego (hasło PDF od
+  // ubezpieczyciela), nie wpisujemy kodu w treść — Klient go zna, a SMS i e-mail
+  // przestają nosić hasło do jego własnych dokumentów.
+  const codeSource = await accessCodeSource(sb, { client_id: offer.client_id, access_code: pin });
+
   // Każda próba wysyłki trafia do ud_send_log — także nieudana.
   const logSend = async (channel, recipient, res) => {
     const status = res?.sent ? 'sent' : res?.stub ? 'stub' : 'error';
@@ -543,10 +549,12 @@ export async function sendOfferToClient(offerId) {
 
   let sms = { sent: false };
   if (offer.client_phone) {
-    sms = await sendSms(
-      offer.client_phone,
-      `Haslo do oferty: ${pin} (otwiera link i pliki PDF, wazne ${ttlHours}h). Otworz: ${link}`
-    );
+    // Bez polskich znaków — SMS zmieściłby się wtedy w mniejszej liczbie znaków.
+    const body =
+      codeSource === 'pesel'
+        ? `Haslo do oferty i plikow PDF: 4 ostatnie cyfry Twojego numeru PESEL (wazne ${ttlHours}h). Otworz: ${link}`
+        : `Haslo do oferty: ${pin} (otwiera link i pliki PDF, wazne ${ttlHours}h). Otworz: ${link}`;
+    sms = await sendSms(offer.client_phone, body);
     await logSend('sms', offer.client_phone, sms);
   }
 
@@ -557,8 +565,10 @@ export async function sendOfferToClient(offerId) {
       clientName: offer.client_name,
       link,
       ttlHours,
-      logoUrl: settings.logo_url || '',
-      footerText: settings.pdf_footer || ''
+      // Logo z naszej domeny — obraz spod adresu Supabase Gmail uznaje za podejrzany.
+      logoUrl: settings.logo_path ? `${clientBaseUrl()}/logo` : '',
+      footerText: settings.pdf_footer || '',
+      codeSource
     });
     email = await sendEmail({
       to: offer.client_email,

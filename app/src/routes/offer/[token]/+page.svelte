@@ -39,7 +39,11 @@
       <h1 style="font-size:1.25rem;margin-bottom:.4rem;">Dostęp do oferty</h1>
       <p class="muted" style="margin-bottom:1.25rem;">
         {#if data.clientName}Witaj, {data.clientName.split(' ')[0]}!<br />{/if}
-        Wpisz 4-cyfrowe hasło, które otrzymałeś/aś SMS-em.
+        {#if data.pinHint === 'pesel'}
+          Wpisz 4 ostatnie cyfry numeru PESEL osoby ubezpieczonej.
+        {:else}
+          Wpisz 4-cyfrowe hasło, które otrzymałeś/aś SMS-em.
+        {/if}
       </p>
       {#if pinError}<div class="error-box">{pinError}</div>{/if}
       <form onsubmit={submitPin} novalidate>
