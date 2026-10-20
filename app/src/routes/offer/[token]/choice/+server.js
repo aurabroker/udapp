@@ -53,7 +53,7 @@ export async function POST({ params, request, cookies }) {
     const msg =
       status === 'rejected'
         ? `Klient ${offer.client_name || ''} zrezygnował z oferty „${offer.name}".`
-        : `Klient ${offer.client_name || ''} wybrał wariant: ${choice.insurer_name} (oferta „${offer.name}").`;
+        : `Klient ${offer.client_name || ''} wybrał wariant: ${choice.insurer_name}${choice.offer_number ? ` — oferta nr ${choice.offer_number}` : ''} (oferta „${offer.name}").`;
     await sendEmail({
       to: agent.user.email,
       subject: `Decyzja klienta — ${offer.name}`,

@@ -19,6 +19,9 @@
 
   const statusLabel = { draft: 'Szkic', sent: 'Wysłana', viewed: 'Otwarta', chosen: 'Wybrana', rejected: 'Rezygnacja' };
   const choice = data.offer.client_choice;
+  const chosenDocId = choice && !choice.rejected ? choice.document_id : null;
+  const chosenDoc = chosenDocId ? data.documents.find((d) => d.id === chosenDocId) : null;
+  const chosenOfferNumber = choice?.offer_number || chosenDoc?.offer_number || null;
 
   // pola edycji
   let eClientId = $state(data.offer.client_id || '');
@@ -201,7 +204,7 @@
     </form>
   </div>
   {#if data.documents.length}
-    <OfferComparison documents={data.documents} />
+    <OfferComparison documents={data.documents} chosenId={chosenDocId} />
     {#if editing}
       <div style="margin-top:1rem;display:flex;flex-direction:column;gap:.4rem;">
         {#each data.documents as d}
@@ -244,7 +247,16 @@
     {#if choice.rejected}
       <p style="color:var(--red-700);font-weight:600;">Klient zrezygnował{choice.rejected_at ? ` (${dateP(choice.rejected_at)})` : ''}.</p>
     {:else}
-      <p style="font-weight:600;">Wybrano: {choice.insurer_name || choice.insurer_type} {choice.chosen_at ? `· ${dateP(choice.chosen_at)}` : ''}</p>
+      <p style="font-weight:600;">
+        Wybrano: {choice.insurer_name || choice.insurer_type}
+        {#if chosenOfferNumber} · oferta nr <strong>{chosenOfferNumber}</strong>{/if}
+        {choice.chosen_at ? `· ${dateP(choice.chosen_at)}` : ''}
+      </p>
+      {#if chosenDoc?.source_filename}
+        <p class="muted" style="margin:.25rem 0 0;">Plik: {chosenDoc.source_filename}</p>
+      {:else if !chosenDoc}
+        <p class="muted" style="margin:.25rem 0 0;">Wybrany wariant nie jest już w ofercie (dokument usunięty).</p>
+      {/if}
     {/if}
   </div>
 {/if}

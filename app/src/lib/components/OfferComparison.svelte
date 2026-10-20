@@ -51,14 +51,14 @@
           </tr>
         {/if}
       {/each}
-      {#if selectable}
+      {#if selectable || chosenId}
         <tr>
           <td></td>
           {#each documents as d}
             <td style="text-align:center;padding:12px 8px;">
               {#if chosenId === d.id}
                 <span class="badge badge-chosen">✓ Wybrany</span>
-              {:else}
+              {:else if selectable}
                 <button class="btn btn-primary" style="padding:.5rem 1rem;font-size:.85rem;" onclick={() => onchoose?.(d)}>Wybieram ten</button>
               {/if}
             </td>
