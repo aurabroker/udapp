@@ -180,12 +180,23 @@
   <h3 style="font-size:1rem;margin-bottom:.75rem;">Oferty klienta ({data.offers.length})</h3>
   {#if data.offers.length}
     <table>
-      <thead><tr><th>Oferta</th><th>Status</th><th>Utworzona</th><th></th></tr></thead>
+      <thead><tr><th>Oferta</th><th>Status</th><th>Decyzja klienta</th><th>Utworzona</th><th></th></tr></thead>
       <tbody>
         {#each data.offers as o}
           <tr>
-            <td style="font-weight:600;">{o.name}</td>
+            <td style="font-weight:600;">{o.name}{#if o.offer_number}<br /><span class="muted" style="font-weight:400;">{o.offer_number}</span>{/if}</td>
             <td><span class="badge badge-{o.status}">{statusLabel[o.status] || o.status}</span></td>
+            <td>
+              {#if o.client_choice?.rejected}
+                <span style="color:var(--red-700);">Rezygnacja{o.client_choice.rejected_at ? ` · ${dateP(o.client_choice.rejected_at)}` : ''}</span>
+              {:else if o.client_choice}
+                <strong>{o.client_choice.offer_number || o.client_choice.insurer_name || o.client_choice.insurer_type}</strong>
+                {#if o.client_choice.offer_number && o.client_choice.insurer_name}<br /><span class="muted">{o.client_choice.insurer_name}</span>{/if}
+                {#if o.client_choice.chosen_at}<br /><span class="muted">{dateP(o.client_choice.chosen_at)}</span>{/if}
+              {:else}
+                <span class="muted">—</span>
+              {/if}
+            </td>
             <td class="muted">{dateP(o.created_at)}</td>
             <td style="text-align:right;"><a href="/panel/offer/{o.id}">Otwórz →</a></td>
           </tr>

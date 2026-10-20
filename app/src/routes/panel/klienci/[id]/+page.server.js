@@ -17,7 +17,7 @@ export async function load({ params, locals }) {
 
   const { data: offers } = await sb
     .from('ud_offers')
-    .select('id, name, status, created_at, source')
+    .select('id, name, offer_number, status, created_at, source, client_choice, decided_at')
     .eq('client_id', client.id)
     .order('created_at', { ascending: false });
 
